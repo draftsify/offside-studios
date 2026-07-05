@@ -15,6 +15,10 @@
   const cv = document.createElement("canvas");
   cv.width = PW; cv.height = PH;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
+  // static scene (grid + buildings) is drawn once — camera is fixed
+  const bg = document.createElement("canvas");
+  bg.width = PW; bg.height = PH;
+  const bgc = bg.getContext("2d");
 
   const RAMP = [[14, " "], [42, "·"], [80, "○"], [140, "◐"], [999, "●"]];
   function ch(v) { for (let i = 0; i < RAMP.length; i++) if (v < RAMP[i][0]) return RAMP[i][1]; return "●"; }
@@ -24,7 +28,7 @@
     [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25],
     [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21],
   ];
-  const DITHER = 34;
+  const DITHER = 20;
   const GROUND_Y = -1.04;
 
   // ---- orbit camera (eased, slow) ----
@@ -101,21 +105,21 @@
     const hipR = twistY([0, 0.02 + bob, T.hipZ + sway], -twist, 0, 0);
     const hipL = twistY([0, 0.02 + bob, -T.hipZ + sway], -twist, 0, 0);
     function leg(hip, ph) {
-      // shorter stride, gentle knee flex, foot stays low (walking)
-      const th = 0.42 * Math.sin(ph) + 0.12 * Math.sin(ph + 0.4);
-      const flex = 0.12 + 0.55 * gb(ph, 4.7, 1.1) + 0.28 * gb(ph, 1.9, 1.1);
+      // clear but relaxed stride, gentle knee flex, foot stays low (walking)
+      const th = 0.55 * Math.sin(ph) + 0.16 * Math.sin(ph + 0.4);
+      const flex = 0.14 + 0.7 * gb(ph, 4.7, 1.05) + 0.3 * gb(ph, 1.9, 1.1);
       const knee = seg(hip, th, T.thigh);
       const cAng = th - flex;
       const ankle = seg(knee, cAng, T.calf);
-      const footAng = cAng + 1.4 + 0.28 * gb(ph, 3.6, 0.9) - 0.18 * gb(ph, 1.1, 0.9);
+      const footAng = cAng + 1.4 + 0.35 * gb(ph, 3.6, 0.85) - 0.2 * gb(ph, 1.1, 0.9);
       return { knee, ankle, foot: seg(ankle, footAng, T.foot) };
     }
     function arm(sh, ph) {
-      // gentle, nearly-straight arm swing (walking)
-      const a = 0.26 * Math.sin(ph) - 0.02;
-      const bend = 0.42 + 0.2 * Math.max(0, Math.sin(ph));
+      // relaxed, nearly-straight arm swing (walking)
+      const a = 0.34 * Math.sin(ph) - 0.03;
+      const bend = 0.5 + 0.22 * Math.max(0, Math.sin(ph));
       const elbow = seg(sh, a, T.uarm);
-      return { elbow, wrist: seg(elbow, a + bend + 0.06 * Math.sin(ph - 0.5), T.farm) };
+      return { elbow, wrist: seg(elbow, a + bend + 0.08 * Math.sin(ph - 0.5), T.farm) };
     }
     const lR = leg(hipR, p), lL = leg(hipL, p + Math.PI);
     const aR = arm(shR, p + Math.PI), aL = arm(shL, p);
@@ -145,30 +149,39 @@
     return [p[0] + t * 0.42, GROUND_Y + 0.01, p[2] - 0.5 * t];
   }
 
-  function rasterize(fig) {
-    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, PW, PH);
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
-    const items = [];
-
-    // floor grid (fades with distance)
+  // draw the fixed scene (floor grid + city wireframe) once
+  function renderStatic() {
+    bgc.fillStyle = "#000"; bgc.fillRect(0, 0, PW, PH);
+    bgc.lineCap = "round"; bgc.lineJoin = "round";
+    const st = [];
     for (const [a, b] of GRID) {
       const pa = project(a), pb = project(b);
       if (!pa.ok || !pb.ok) continue;
       const zc = (pa.zc + pb.zc) / 2;
-      const tone = Math.max(22, Math.round(78 - (zc - CAMD) * 6));
-      items.push({ z: zc, kind: "line", pa, pb, w: 1, tone, curve: 0 });
+      st.push({ z: zc, pa, pb, w: 1, tone: Math.max(22, Math.round(78 - (zc - CAMD) * 6)) });
     }
-    // buildings: wireframe, far -> reads as a city all around
     for (const box of BOXES) {
       const pv = box.v.map(project);
       for (const [a, b] of box.edges) {
         const pa = pv[a], pb = pv[b];
         if (!pa.ok || !pb.ok) continue;
         const zc = (pa.zc + pb.zc) / 2;
-        const tone = Math.max(70, Math.round(190 - (zc - CAMD) * 9));
-        items.push({ z: zc, kind: "line", pa, pb, w: 1.4, tone, curve: 0 });
+        st.push({ z: zc, pa, pb, w: 1.4, tone: Math.max(70, Math.round(190 - (zc - CAMD) * 9)) });
       }
     }
+    st.sort((m, n) => n.z - m.z);
+    for (const it of st) {
+      bgc.strokeStyle = "rgb(" + it.tone + "," + it.tone + "," + it.tone + ")";
+      bgc.lineWidth = it.w;
+      bgc.beginPath(); bgc.moveTo(it.pa.x, it.pa.y); bgc.lineTo(it.pb.x, it.pb.y); bgc.stroke();
+    }
+  }
+
+  function rasterize(fig) {
+    ctx.drawImage(bg, 0, 0);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    const items = [];
+
     // runner cast shadow on the floor
     for (let pass = 0; pass < 2; pass++) {
       const soft = pass === 0 ? 2.4 : 0.9, tone = pass === 0 ? 24 : 38;
@@ -222,8 +235,7 @@
         const avg = sum / (SSX * SSY);
         if (avg < 16) { row += " "; continue; }
         const off = (BAYER[cyi & 7][cxi & 7] / 64 - 0.5) * DITHER;
-        const grain = (((cxi * 13 + cyi * 29) % 11) - 5) * 2;
-        row += ch(avg + off + grain);
+        row += ch(avg + off);
       }
       s += row;
       if (cyi < ROWS - 1) s += "\n";
@@ -234,11 +246,12 @@
   const start = performance.now();
   let acc = 0, last = start;
   function frame(now) {
-    const p = (now - start) * 0.0011;   // gentle walking cadence
+    const p = (now - start) * 0.0014;   // gentle walking cadence
     acc += now - last; last = now;
     if (acc >= 34) { acc = 0; rasterize(pose(p)); toAscii(); }
     requestAnimationFrame(frame);
   }
+  renderStatic();
   rasterize(pose(0)); toAscii();
   requestAnimationFrame(frame);
 })();
