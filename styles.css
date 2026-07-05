@@ -16,11 +16,12 @@ html, body {
   touch-action: none;
   user-select: none;
 }
-.stage.dragging { cursor: grabbing; }
+.stage.dragging { cursor: none; }
+.stage.dragging * { cursor: none !important; }
 
 .ascii {
   font-family: "Fragment Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: clamp(5px, 1.7vh, 13px);
+  font-size: clamp(4px, 1.25vh, 10px);
   line-height: 1.02em;
   white-space: pre;
   color: #565656;

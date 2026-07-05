@@ -4,8 +4,8 @@
   const out = document.getElementById("runner");
   if (!stage || !out) return;
 
-  // ASCII grid
-  const COLS = 104, ROWS = 54;
+  // ASCII grid (denser grid -> smaller dots)
+  const COLS = 140, ROWS = 76;
   const SSX = 3, SSY = 5;
   const PW = COLS * SSX, PH = ROWS * SSY;
   const SCALE = PH * 0.35;
@@ -17,11 +17,16 @@
   const ctx = cv.getContext("2d", { willReadFrequently: true });
 
   // density ramp (dark -> dense)
-  const RAMP = [[14, " "], [46, "·"], [98, "○"], [165, "◐"], [999, "●"]];
+  const RAMP = [[14, " "], [42, "·"], [80, "○"], [140, "◐"], [999, "●"]];
   function ch(v) { for (let i = 0; i < RAMP.length; i++) if (v < RAMP[i][0]) return RAMP[i][1]; return "●"; }
-  // 4x4 ordered-dither for halftone texture
-  const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
-  const DITHER = 46;
+  // 8x8 ordered-dither for fine halftone texture
+  const BAYER = [
+    [0, 32, 8, 40, 2, 34, 10, 42], [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38], [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41], [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21],
+  ];
+  const DITHER = 62;
 
   // ---- rotation: eased target -> fluid, slow drag ----
   let rotY = 0.5, rotX = -0.14;
@@ -205,8 +210,9 @@
         }
         const avg = sum / (SSX * SSY);
         if (avg < 4) { row += " "; continue; }
-        const off = (BAYER[cyi & 3][cxi & 3] / 16 - 0.5) * DITHER;   // halftone texture
-        row += ch(avg + off);
+        const off = (BAYER[cyi & 7][cxi & 7] / 64 - 0.5) * DITHER;   // fine halftone texture
+        const grain = (((cxi * 13 + cyi * 29) % 11) - 5) * 3.2;      // stable stipple grain
+        row += ch(avg + off + grain);
       }
       s += row;
       if (cyi < ROWS - 1) s += "\n";
