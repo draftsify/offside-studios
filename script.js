@@ -1,22 +1,21 @@
-// ---- 3D alley scene (runner + ASCII buildings), orbit camera, rendered to ASCII ----
+// ---- Runner in a 3D ASCII city (orbit camera, buildings all around, fullscreen) ----
 (function () {
   const stage = document.getElementById("stage");
   const out = document.getElementById("runner");
   if (!stage || !out) return;
 
   // ASCII grid
-  const COLS = 150, ROWS = 84;
+  const COLS = 152, ROWS = 86;
   const SSX = 3, SSY = 5;
   const PW = COLS * SSX, PH = ROWS * SSY;
-  const SCALE = PH * 0.135;
-  const cx = PW / 2, cy = PH * 0.52;
-  const FOCAL = 7;
+  const SCALE = PH * 0.27;              // runner keeps its previous, prominent size
+  const cx = PW / 2, cy = PH * 0.48;
+  const CAMD = 4.6, FL = 4.6, NEAR = 0.4;  // perspective camera, orbits at distance CAMD
 
   const cv = document.createElement("canvas");
   cv.width = PW; cv.height = PH;
   const ctx = cv.getContext("2d", { willReadFrequently: true });
 
-  // density ramp + fine dither texture
   const RAMP = [[14, " "], [42, "·"], [80, "○"], [140, "◐"], [999, "●"]];
   function ch(v) { for (let i = 0; i < RAMP.length; i++) if (v < RAMP[i][0]) return RAMP[i][1]; return "●"; }
   const BAYER = [
@@ -26,14 +25,11 @@
     [15, 47, 7, 39, 13, 45, 5, 37], [63, 31, 55, 23, 61, 29, 53, 21],
   ];
   const DITHER = 34;
-
-  // world light (fixed sun -> shading stays consistent while orbiting)
-  const L = (() => { const v = [-0.35, 0.82, 0.45]; const m = Math.hypot(...v); return v.map((x) => x / m); })();
   const GROUND_Y = -1.04;
 
   // ---- orbit camera (eased, slow) ----
-  let rotY = 0.6, rotX = -0.3, tgtY = 0.6, tgtX = -0.3, velY = 0;
-  const SENS = 0.006, EASE = 0.075, IDLE = 0.0012, DECAY = 0.95, REST_X = -0.28;
+  let rotY = 0.6, rotX = -0.2, tgtY = 0.6, tgtX = -0.2, velY = 0;
+  const SENS = 0.006, EASE = 0.075, IDLE = 0.0012, DECAY = 0.95, REST_X = -0.2;
   let dragging = false, lastX = 0, lastY = 0;
   stage.addEventListener("pointerdown", (e) => {
     dragging = true; stage.classList.add("dragging");
@@ -45,7 +41,7 @@
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     tgtY += dx * SENS;
-    tgtX = Math.max(-0.75, Math.min(0.2, tgtX + dy * SENS * 0.7));
+    tgtX = Math.max(-0.6, Math.min(0.18, tgtX + dy * SENS * 0.7));
     velY = dx * SENS;
   });
   function endDrag() { dragging = false; stage.classList.remove("dragging"); }
@@ -57,11 +53,12 @@
     const x = p[0], y = p[1], z = p[2];
     const x1 = x * cY + z * sY, z1 = -x * sY + z * cY;
     const y2 = y * cX - z1 * sX, z2 = y * sX + z1 * cX;
-    const persp = FOCAL / (FOCAL - z2);
-    return { x: cx + x1 * SCALE * persp, y: cy - y2 * SCALE * persp, z: z2, persp };
+    const zc = CAMD - z2;                 // depth from camera
+    const persp = FL / zc;
+    return { x: cx + x1 * persp * SCALE, y: cy - y2 * persp * SCALE, zc, ok: zc > NEAR };
   }
 
-  // ---- static scene: alley buildings + ground ----
+  // ---- static city: a ring of buildings all around, far from the runner ----
   function makeBox(cx0, cz0, w, d, h) {
     const x0 = cx0 - w / 2, x1 = cx0 + w / 2, z0 = cz0 - d / 2, z1 = cz0 + d / 2;
     const y0 = GROUND_Y, y1 = GROUND_Y + h;
@@ -69,32 +66,34 @@
       [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1],
       [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1],
     ];
-    const faces = [
-      { idx: [4, 5, 6, 7], n: [0, 1, 0] },
-      { idx: [1, 2, 6, 5], n: [1, 0, 0] },
-      { idx: [3, 0, 4, 7], n: [-1, 0, 0] },
-      { idx: [2, 3, 7, 6], n: [0, 0, 1] },
-      { idx: [0, 1, 5, 4], n: [0, 0, -1] },
-    ];
     const edges = [
-      [0, 4], [1, 5], [2, 6], [3, 7],   // verticals
-      [4, 5], [5, 6], [6, 7], [7, 4],   // top
-      [0, 1], [1, 2], [2, 3], [3, 0],   // base
+      [0, 4], [1, 5], [2, 6], [3, 7], [4, 5], [5, 6], [6, 7], [7, 4], [0, 1], [1, 2], [2, 3], [3, 0],
     ];
-    return { v, faces, edges };
+    return { v, edges };
   }
-  const BOXES = [
-    makeBox(-1.85, -1.5, 0.9, 0.85, 1.7), makeBox(-0.35, -1.55, 0.95, 0.9, 2.2), makeBox(1.2, -1.5, 0.9, 0.85, 1.4),
-    makeBox(-1.7, 1.5, 0.9, 0.85, 1.9), makeBox(-0.1, 1.55, 0.95, 0.9, 1.5), makeBox(1.45, 1.5, 0.9, 0.85, 2.3),
+  const BOXES = [];
+  const RINGS = [
+    { R: 6.0, n: 11, hmin: 2.2, hmax: 4.2, w: 1.2 },
+    { R: 9.2, n: 15, hmin: 3.4, hmax: 6.8, w: 1.7 },
   ];
+  for (const r of RINGS) {
+    for (let i = 0; i < r.n; i++) {
+      const ang = (i / r.n) * Math.PI * 2 + r.R;
+      const jit = 0.5 * Math.sin(i * 2.7);
+      const R = r.R + jit;
+      const h = r.hmin + ((i * 37) % 100) / 100 * (r.hmax - r.hmin);
+      BOXES.push(makeBox(R * Math.cos(ang), R * Math.sin(ang), r.w, r.w, h));
+    }
+  }
+  // ground grid reaching out to the city
   const GRID = (() => {
-    const g = [], A = 2.1, S = 0.7;
+    const g = [], A = 10, S = 1.15;
     for (let x = -A; x <= A + 1e-3; x += S) g.push([[x, GROUND_Y, -A], [x, GROUND_Y, A]]);
     for (let z = -A; z <= A + 1e-3; z += S) g.push([[-A, GROUND_Y, z], [A, GROUND_Y, z]]);
     return g;
   })();
 
-  // ---- runner skeleton ----
+  // ---- runner ----
   const T = { thigh: 0.46, calf: 0.44, foot: 0.17, uarm: 0.34, farm: 0.32, hipZ: 0.13, shZ: 0.15 };
   const seg = (b, a, l) => [b[0] + Math.sin(a) * l, b[1] - Math.cos(a) * l, b[2]];
   function twistY(pt, a, ax, az) {
@@ -108,20 +107,16 @@
     const leanX = 0.06 + 0.025 * Math.sin(2 * p);
     const twist = 0.22 * Math.sin(p);
     const sway = 0.03 * Math.sin(p);
-
     const pelvis = [0, bob, 0];
     const spineMid = [leanX * 0.45, 0.32 + bob, 0];
     const chest = [leanX, 0.62 + bob, 0];
-    const neckB = [leanX, 0.72 + bob, 0];               // yoke root
+    const neckB = [leanX, 0.72 + bob, 0];
     const neck = [leanX * 1.12, 0.78 + bob, 0];
     const head = [leanX * 1.25 + 0.03, 0.96 + bob, 0.02 * Math.sin(p)];
-
-    // shoulders sit slightly BELOW & out from the yoke -> natural sloped shoulders
     const shR = twistY([leanX, 0.685 + bob, T.shZ], twist, leanX, 0);
     const shL = twistY([leanX, 0.685 + bob, -T.shZ], twist, leanX, 0);
     const hipR = twistY([0, 0.02 + bob, T.hipZ + sway], -twist, 0, 0);
     const hipL = twistY([0, 0.02 + bob, -T.hipZ + sway], -twist, 0, 0);
-
     function leg(hip, ph) {
       const th = 0.62 * Math.sin(ph) + 0.34 * Math.sin(ph + 0.5);
       const flex = 0.16 + 1.35 * gb(ph, 4.95, 0.95) + 0.34 * gb(ph, 2.5, 1.2);
@@ -129,24 +124,20 @@
       const cAng = th - flex;
       const ankle = seg(knee, cAng, T.calf);
       const footAng = cAng + 1.35 + 0.45 * gb(ph, 3.7, 0.8) - 0.3 * gb(ph, 1.3, 0.9);
-      const foot = seg(ankle, footAng, T.foot);
-      return { knee, ankle, foot };
+      return { knee, ankle, foot: seg(ankle, footAng, T.foot) };
     }
     function arm(sh, ph) {
-      const a = 0.4 * Math.sin(ph) - 0.06;                 // upper arm hangs, modest swing
-      const fwd = Math.max(0, Math.sin(ph));
-      const bend = 1.28 + 0.6 * fwd;                       // elbow tightens as hand drives up-front
+      const a = 0.4 * Math.sin(ph) - 0.06;
+      const bend = 1.28 + 0.6 * Math.max(0, Math.sin(ph));
       const elbow = seg(sh, a, T.uarm);
-      const wrist = seg(elbow, a + bend + 0.12 * Math.sin(ph - 0.6), T.farm);
-      return { elbow, wrist };
+      return { elbow, wrist: seg(elbow, a + bend + 0.12 * Math.sin(ph - 0.6), T.farm) };
     }
     const lR = leg(hipR, p), lL = leg(hipL, p + Math.PI);
     const aR = arm(shR, p + Math.PI), aL = arm(shL, p);
-
     const bones = [
       [pelvis, spineMid, 1.15, 0.05], [spineMid, chest, 1.05, -0.06], [chest, neck, 0.8, 0.04],
       [hipL, hipR, 0.85, 0.12],
-      [neckB, shL, 0.6, 0.16], [neckB, shR, 0.6, -0.16],   // sloped, rounded shoulders (no flat bar / no M)
+      [neckB, shL, 0.6, 0.16], [neckB, shR, 0.6, -0.16],
       [shL, aL.elbow, 0.72, 0.1], [aL.elbow, aL.wrist, 0.56, 0.14],
       [shR, aR.elbow, 0.72, -0.1], [aR.elbow, aR.wrist, 0.56, -0.14],
       [hipL, lL.knee, 1.0, 0.09], [lL.knee, lL.ankle, 0.84, -0.1], [lL.ankle, lL.foot, 0.64, 0.06],
@@ -164,10 +155,9 @@
       ctx.quadraticCurveTo(mx + nx * curve * len, my + ny * curve * len, pb.x, pb.y);
     } else ctx.lineTo(pb.x, pb.y);
   }
-  // drop a point to the ground plane along the light direction -> real cast shadow
   function shadowPt(p) {
     const t = p[1] - GROUND_Y;
-    return [p[0] + t * (-L[0] / L[1]), GROUND_Y + 0.01, p[2] + t * (-L[2] / L[1])];
+    return [p[0] + t * 0.42, GROUND_Y + 0.01, p[2] - 0.5 * t];
   }
 
   function rasterize(fig) {
@@ -175,53 +165,50 @@
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     const items = [];
 
-    // ground grid (clean perspective floor)
+    // floor grid (fades with distance)
     for (const [a, b] of GRID) {
       const pa = project(a), pb = project(b);
-      items.push({ z: (pa.z + pb.z) / 2 - 0.35, kind: "line", pa, pb, w: 1, tone: 58, curve: 0 });
+      if (!pa.ok || !pb.ok) continue;
+      const zc = (pa.zc + pb.zc) / 2;
+      const tone = Math.max(22, Math.round(78 - (zc - CAMD) * 6));
+      items.push({ z: zc, kind: "line", pa, pb, w: 1, tone, curve: 0 });
     }
-    // buildings: wireframe boxes (bright edges) -> clean 3D structures
+    // buildings: wireframe, far -> reads as a city all around
     for (const box of BOXES) {
       const pv = box.v.map(project);
       for (const [a, b] of box.edges) {
         const pa = pv[a], pb = pv[b];
-        items.push({ z: (pa.z + pb.z) / 2, kind: "line", pa, pb, w: 1.5, tone: 160, curve: 0 });
+        if (!pa.ok || !pb.ok) continue;
+        const zc = (pa.zc + pb.zc) / 2;
+        const tone = Math.max(70, Math.round(190 - (zc - CAMD) * 9));
+        items.push({ z: zc, kind: "line", pa, pb, w: 1.4, tone, curve: 0 });
       }
     }
-
-    // runner cast shadow (real geometry on the floor)
+    // runner cast shadow on the floor
     for (let pass = 0; pass < 2; pass++) {
-      const soft = pass === 0 ? 2.2 : 0.8, tone = pass === 0 ? 22 : 34;
+      const soft = pass === 0 ? 2.4 : 0.9, tone = pass === 0 ? 24 : 38;
       for (const [a, b, w, curve] of fig.bones) {
         const pa = project(shadowPt(a)), pb = project(shadowPt(b));
-        items.push({ z: (pa.z + pb.z) / 2 + 0.005, kind: "line", pa, pb, w: w * LW * SCALE + soft, tone, curve });
+        if (!pa.ok || !pb.ok) continue;
+        items.push({ z: (pa.zc + pb.zc) / 2 - 0.01, kind: "line", pa, pb, w: w * LW * SCALE + soft, tone, curve });
       }
     }
-
-    // runner (bright, depth + light shaded)
-    const B = fig.bones.map(([a, b, w, curve]) => {
+    // runner (bright, on top)
+    for (const [a, b, w, curve] of fig.bones) {
       const pa = project(a), pb = project(b);
-      return { pa, pb, w, curve: curve || 0, z: (pa.z + pb.z) / 2, pw: (pa.persp + pb.persp) / 2 };
-    });
-    for (const it of B) {
-      const py = (it.pa.y + it.pb.y) / 2, px = (it.pa.x + it.pb.x) / 2;
+      const py = (pa.y + pb.y) / 2, px = (pa.x + pb.x) / 2;
       const light = (cy - py) / PH * 40 + (cx - px) / PW * 16;
-      const g = Math.max(150, Math.min(255, Math.round(178 + it.z * 190 + light)));
-      items.push({ z: it.z + 0.5, kind: "line", pa: it.pa, pb: it.pb, w: Math.max(1.4, it.w * LW * 1.7 * SCALE * it.pw), tone: g, curve: it.curve });
+      const g = Math.max(150, Math.min(255, Math.round(185 + light)));
+      const pw = (FL / pa.zc + FL / pb.zc) / 2;
+      items.push({ z: (pa.zc + pb.zc) / 2 - 0.02, kind: "line", pa, pb, w: Math.max(1.4, w * LW * SCALE * pw), tone: g, curve });
     }
     const ph = project(fig.head);
-    items.push({ z: ph.z + 0.55, kind: "head", p: ph, r: fig.headR * 1.15 * SCALE * ph.persp, tone: 235 });
+    items.push({ z: ph.zc - 0.03, kind: "head", p: ph, r: fig.headR * (FL / ph.zc) * SCALE, tone: 235 });
 
-    // painter's sort: far -> near
-    items.sort((m, n) => m.z - n.z);
+    // painter's sort: far (large zc) -> near
+    items.sort((m, n) => n.z - m.z);
     for (const it of items) {
-      if (it.kind === "poly") {
-        ctx.fillStyle = "rgb(" + it.tone + "," + it.tone + "," + it.tone + ")";
-        ctx.beginPath();
-        ctx.moveTo(it.pts[0].x, it.pts[0].y);
-        for (let i = 1; i < it.pts.length; i++) ctx.lineTo(it.pts[i].x, it.pts[i].y);
-        ctx.closePath(); ctx.fill();
-      } else if (it.kind === "line") {
+      if (it.kind === "line") {
         ctx.strokeStyle = "rgb(" + it.tone + "," + it.tone + "," + it.tone + ")";
         ctx.lineWidth = it.w;
         ctx.beginPath(); curveTo(it.pa, it.pb, it.curve); ctx.stroke();
