@@ -59,6 +59,12 @@
     const dx = pt[0] - ax, dz = pt[2] - az, c = Math.cos(a), s = Math.sin(a);
     return [ax + dx * c + dz * s, pt[1], az - dx * s + dz * c];
   }
+  // gaussian bump on the unit circle (for phasing gait events)
+  function gb(x, c, w) {
+    let d = x - c;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    return Math.exp(-(d * d) / (2 * w * w));
+  }
 
   function pose(p) {
     const bob = 0.05 * Math.cos(2 * p);
@@ -77,18 +83,24 @@
     const hipR = twistY([0, 0.02 + bob, T.hipZ + sway], -twist, 0, 0);
     const hipL = twistY([0, 0.02 + bob, -T.hipZ + sway], -twist, 0, 0);
 
-    const LA = 0.92, AA = 0.8;
     function leg(hip, ph) {
-      const th = LA * Math.sin(ph);
-      const flex = 0.4 + 0.95 * (0.5 - 0.5 * Math.cos(ph + 0.75));
+      // hip flexion: + forward (reach) at ph≈π/2, driven back through stance
+      const th = 0.62 * Math.sin(ph) + 0.34 * Math.sin(ph + 0.5);
+      // knee flexion: big tuck in early swing (heel toward hip) + small stance absorb
+      const flex = 0.16 + 1.35 * gb(ph, 4.95, 0.95) + 0.34 * gb(ph, 2.5, 1.2);
       const knee = seg(hip, th, T.thigh);
-      const ankle = seg(knee, th - flex, T.calf);
-      const foot = seg(ankle, th - flex + 1.5 + 0.2 * Math.sin(ph), T.foot);
+      const cAng = th - flex;                 // shank bends backward at the knee
+      const ankle = seg(knee, cAng, T.calf);
+      // ankle: point the toe at push-off, lift it through swing
+      const footAng = cAng + 1.35 + 0.45 * gb(ph, 3.7, 0.8) - 0.3 * gb(ph, 1.3, 0.9);
+      const foot = seg(ankle, footAng, T.foot);
       return { knee, ankle, foot };
     }
     function arm(sh, ph) {
-      const a = AA * Math.sin(ph) - 0.12;
-      const bend = 1.2 + 0.5 * (0.5 - 0.5 * Math.cos(ph));
+      // shoulder swing (contralateral); hand travels hip -> chest
+      const a = 0.72 * Math.sin(ph) - 0.16;
+      // elbow ~90°, tightening as the arm drives forward/up, opening on the back swing
+      const bend = 1.5 + 0.4 * Math.sin(ph) + 0.08;
       const elbow = seg(sh, a, T.uarm);
       const wrist = seg(elbow, a + bend, T.farm);
       return { elbow, wrist };
