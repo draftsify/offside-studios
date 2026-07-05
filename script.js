@@ -32,8 +32,26 @@
   const GROUND_Y = -1.04;
 
   // ---- orbit camera (eased, slow) ----
-  // fixed camera — no rotation
-  const rotY = 0.6, rotX = -0.2;
+  // orbit camera — drag to rotate (no auto-rotation)
+  let rotY = 0.6, rotX = -0.2, tgtY = 0.6, tgtX = -0.2, velY = 0;
+  const SENS = 0.006, EASE = 0.11, DECAY = 0.93;
+  let dragging = false, lastX = 0, lastY = 0;
+  stage.addEventListener("pointerdown", (e) => {
+    dragging = true; stage.classList.add("dragging");
+    lastX = e.clientX; lastY = e.clientY; velY = 0;
+    try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  window.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    tgtY += dx * SENS;
+    tgtX = Math.max(-0.6, Math.min(0.18, tgtX + dy * SENS * 0.7));
+    velY = dx * SENS;
+  });
+  function endDrag() { dragging = false; stage.classList.remove("dragging"); }
+  window.addEventListener("pointerup", endDrag);
+  window.addEventListener("pointercancel", endDrag);
 
   function project(p) {
     const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
@@ -244,11 +262,21 @@
   }
 
   const start = performance.now();
-  let acc = 0, last = start;
+  let acc = 0, last = start, prevRY = rotY, prevRX = rotX;
   function frame(now) {
     const p = (now - start) * 0.0014;   // gentle walking cadence
+    if (!dragging) { tgtY += velY; velY *= DECAY; }   // momentum only (no auto-spin)
+    rotY += (tgtY - rotY) * EASE;
+    rotX += (tgtX - rotX) * EASE;
     acc += now - last; last = now;
-    if (acc >= 34) { acc = 0; rasterize(pose(p)); toAscii(); }
+    if (acc >= 34) {
+      acc = 0;
+      // recompute the static scene only when the camera actually moves
+      if (Math.abs(rotY - prevRY) > 1e-4 || Math.abs(rotX - prevRX) > 1e-4) {
+        renderStatic(); prevRY = rotY; prevRX = rotX;
+      }
+      rasterize(pose(p)); toAscii();
+    }
     requestAnimationFrame(frame);
   }
   renderStatic();
