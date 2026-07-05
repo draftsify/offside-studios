@@ -28,25 +28,8 @@
   const GROUND_Y = -1.04;
 
   // ---- orbit camera (eased, slow) ----
-  let rotY = 0.6, rotX = -0.2, tgtY = 0.6, tgtX = -0.2, velY = 0;
-  const SENS = 0.006, EASE = 0.075, IDLE = 0.0012, DECAY = 0.95, REST_X = -0.2;
-  let dragging = false, lastX = 0, lastY = 0;
-  stage.addEventListener("pointerdown", (e) => {
-    dragging = true; stage.classList.add("dragging");
-    lastX = e.clientX; lastY = e.clientY; velY = 0;
-    try { stage.setPointerCapture(e.pointerId); } catch (_) {}
-  });
-  window.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const dx = e.clientX - lastX, dy = e.clientY - lastY;
-    lastX = e.clientX; lastY = e.clientY;
-    tgtY += dx * SENS;
-    tgtX = Math.max(-0.6, Math.min(0.18, tgtX + dy * SENS * 0.7));
-    velY = dx * SENS;
-  });
-  function endDrag() { dragging = false; stage.classList.remove("dragging"); }
-  window.addEventListener("pointerup", endDrag);
-  window.addEventListener("pointercancel", endDrag);
+  // fixed camera — no rotation
+  const rotY = 0.6, rotX = -0.2;
 
   function project(p) {
     const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
@@ -103,10 +86,10 @@
   function gb(x, c, w) { let d = x - c; d = Math.atan2(Math.sin(d), Math.cos(d)); return Math.exp(-(d * d) / (2 * w * w)); }
 
   function pose(p) {
-    const bob = 0.05 * Math.cos(2 * p);
-    const leanX = 0.06 + 0.025 * Math.sin(2 * p);
-    const twist = 0.22 * Math.sin(p);
-    const sway = 0.03 * Math.sin(p);
+    const bob = 0.028 * Math.cos(2 * p);
+    const leanX = 0.02 + 0.012 * Math.sin(2 * p);   // upright walking posture
+    const twist = 0.12 * Math.sin(p);
+    const sway = 0.025 * Math.sin(p);
     const pelvis = [0, bob, 0];
     const spineMid = [leanX * 0.45, 0.32 + bob, 0];
     const chest = [leanX, 0.62 + bob, 0];
@@ -118,19 +101,21 @@
     const hipR = twistY([0, 0.02 + bob, T.hipZ + sway], -twist, 0, 0);
     const hipL = twistY([0, 0.02 + bob, -T.hipZ + sway], -twist, 0, 0);
     function leg(hip, ph) {
-      const th = 0.62 * Math.sin(ph) + 0.34 * Math.sin(ph + 0.5);
-      const flex = 0.16 + 1.35 * gb(ph, 4.95, 0.95) + 0.34 * gb(ph, 2.5, 1.2);
+      // shorter stride, gentle knee flex, foot stays low (walking)
+      const th = 0.42 * Math.sin(ph) + 0.12 * Math.sin(ph + 0.4);
+      const flex = 0.12 + 0.55 * gb(ph, 4.7, 1.1) + 0.28 * gb(ph, 1.9, 1.1);
       const knee = seg(hip, th, T.thigh);
       const cAng = th - flex;
       const ankle = seg(knee, cAng, T.calf);
-      const footAng = cAng + 1.35 + 0.45 * gb(ph, 3.7, 0.8) - 0.3 * gb(ph, 1.3, 0.9);
+      const footAng = cAng + 1.4 + 0.28 * gb(ph, 3.6, 0.9) - 0.18 * gb(ph, 1.1, 0.9);
       return { knee, ankle, foot: seg(ankle, footAng, T.foot) };
     }
     function arm(sh, ph) {
-      const a = 0.4 * Math.sin(ph) - 0.06;
-      const bend = 1.28 + 0.6 * Math.max(0, Math.sin(ph));
+      // gentle, nearly-straight arm swing (walking)
+      const a = 0.26 * Math.sin(ph) - 0.02;
+      const bend = 0.42 + 0.2 * Math.max(0, Math.sin(ph));
       const elbow = seg(sh, a, T.uarm);
-      return { elbow, wrist: seg(elbow, a + bend + 0.12 * Math.sin(ph - 0.6), T.farm) };
+      return { elbow, wrist: seg(elbow, a + bend + 0.06 * Math.sin(ph - 0.5), T.farm) };
     }
     const lR = leg(hipR, p), lL = leg(hipL, p + Math.PI);
     const aR = arm(shR, p + Math.PI), aL = arm(shL, p);
@@ -249,10 +234,7 @@
   const start = performance.now();
   let acc = 0, last = start;
   function frame(now) {
-    const p = (now - start) * 0.0013;
-    if (!dragging) { tgtY += velY; velY *= DECAY; tgtY += IDLE; tgtX += (REST_X - tgtX) * 0.02; }
-    rotY += (tgtY - rotY) * EASE;
-    rotX += (tgtX - rotX) * EASE;
+    const p = (now - start) * 0.0011;   // gentle walking cadence
     acc += now - last; last = now;
     if (acc >= 34) { acc = 0; rasterize(pose(p)); toAscii(); }
     requestAnimationFrame(frame);

@@ -12,12 +12,9 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: grab;
-  touch-action: none;
+  cursor: default;
   user-select: none;
 }
-.stage.dragging { cursor: none; }
-.stage.dragging * { cursor: none !important; }
 
 .ascii {
   font-family: "Fragment Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
