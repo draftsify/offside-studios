@@ -1,15 +1,15 @@
-// ---- 3D running figure, rendered to ASCII (cinematic slow-motion) ----
+// ---- 3D running figure -> ASCII (cinematic slow-motion, human shadow, textured) ----
 (function () {
   const stage = document.getElementById("stage");
   const out = document.getElementById("runner");
   if (!stage || !out) return;
 
   // ASCII grid
-  const COLS = 104, ROWS = 52;
-  const SSX = 3, SSY = 5;                 // offscreen px per cell (aspect ~1.67)
-  const PW = COLS * SSX, PH = ROWS * SSY; // offscreen resolution
-  const SCALE = PH * 0.36;
-  const cx = PW / 2, cy = PH / 2 + SCALE * 0.06;
+  const COLS = 104, ROWS = 54;
+  const SSX = 3, SSY = 5;
+  const PW = COLS * SSX, PH = ROWS * SSY;
+  const SCALE = PH * 0.35;
+  const cx = PW / 2, cy = PH / 2 + SCALE * 0.02;
   const FOCAL = 4.2;
 
   const cv = document.createElement("canvas");
@@ -17,18 +17,17 @@
   const ctx = cv.getContext("2d", { willReadFrequently: true });
 
   // density ramp (dark -> dense)
-  const RAMP = [
-    [14, " "], [46, "·"], [98, "○"], [165, "◐"], [999, "●"],
-  ];
-  function ch(v) {
-    for (let i = 0; i < RAMP.length; i++) if (v < RAMP[i][0]) return RAMP[i][1];
-    return "●";
-  }
+  const RAMP = [[14, " "], [46, "·"], [98, "○"], [165, "◐"], [999, "●"]];
+  function ch(v) { for (let i = 0; i < RAMP.length; i++) if (v < RAMP[i][0]) return RAMP[i][1]; return "●"; }
+  // 4x4 ordered-dither for halftone texture
+  const BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+  const DITHER = 46;
 
-  // ---- rotation state (slow auto-orbit + drag) ----
+  // ---- rotation: eased target -> fluid, slow drag ----
   let rotY = 0.5, rotX = -0.14;
+  let tgtY = 0.5, tgtX = -0.14;
   let velY = 0;
-  const REST_X = -0.14, IDLE = 0.0016;    // gentle cinematic spin
+  const SENS = 0.006, EASE = 0.075, IDLE = 0.0014, DECAY = 0.95, REST_X = -0.14;
   let dragging = false, lastX = 0, lastY = 0;
 
   stage.addEventListener("pointerdown", (e) => {
@@ -40,19 +39,17 @@
     if (!dragging) return;
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
-    rotY += dx * 0.01;
-    rotX = Math.max(-0.95, Math.min(0.95, rotX + dy * 0.006));
-    velY = dx * 0.01;
+    tgtY += dx * SENS;
+    tgtX = Math.max(-0.9, Math.min(0.9, tgtX + dy * SENS * 0.7));
+    velY = dx * SENS;
   });
   function endDrag() { dragging = false; stage.classList.remove("dragging"); }
   window.addEventListener("pointerup", endDrag);
   window.addEventListener("pointercancel", endDrag);
 
-  // ---- skeleton (local, +Y up, faces +X, lateral = Z) ----
+  // ---- skeleton ----
   const T = { thigh: 0.46, calf: 0.44, foot: 0.17, uarm: 0.34, farm: 0.32, hipZ: 0.13, shZ: 0.18 };
-  // "down" vector rotated about lateral(Z) axis: +a swings forward(+X)
   const seg = (b, a, l) => [b[0] + Math.sin(a) * l, b[1] - Math.cos(a) * l, b[2]];
-  // rotate a point about a vertical (Y) axis passing through (ax,·,az)
   function twistY(pt, a, ax, az) {
     const dx = pt[0] - ax, dz = pt[2] - az, c = Math.cos(a), s = Math.sin(a);
     return [ax + dx * c + dz * s, pt[1], az - dx * s + dz * c];
@@ -60,18 +57,16 @@
 
   function pose(p) {
     const bob = 0.05 * Math.cos(2 * p);
-    const leanX = 0.06 + 0.025 * Math.sin(2 * p);   // torso lean breathes
-    const twist = 0.22 * Math.sin(p);               // shoulders/hips counter-rotate
-    const sway = 0.03 * Math.sin(p);                // gentle hip sway
+    const leanX = 0.06 + 0.025 * Math.sin(2 * p);
+    const twist = 0.22 * Math.sin(p);
+    const sway = 0.03 * Math.sin(p);
 
     const pelvis = [0, bob, 0];
     const spineMid = [leanX * 0.45, 0.32 + bob, 0];
     const chest = [leanX, 0.62 + bob, 0];
     const neck = [leanX * 1.12, 0.77 + bob + 0.01 * Math.cos(2 * p), 0];
-    // head follows the motion (slight nod + lead)
     const head = [leanX * 1.25 + 0.03, 0.95 + bob, 0.02 * Math.sin(p)];
 
-    // shoulders twist one way, hips the other -> natural torso rotation
     const shR = twistY([leanX, 0.72 + bob, T.shZ], twist, leanX, 0);
     const shL = twistY([leanX, 0.72 + bob, -T.shZ], twist, leanX, 0);
     const hipR = twistY([0, 0.02 + bob, T.hipZ + sway], -twist, 0, 0);
@@ -80,7 +75,6 @@
     const LA = 0.92, AA = 0.8;
     function leg(hip, ph) {
       const th = LA * Math.sin(ph);
-      // knee flex with a little lag (secondary motion)
       const flex = 0.4 + 0.95 * (0.5 - 0.5 * Math.cos(ph + 0.75));
       const knee = seg(hip, th, T.thigh);
       const ankle = seg(knee, th - flex, T.calf);
@@ -89,7 +83,6 @@
     }
     function arm(sh, ph) {
       const a = AA * Math.sin(ph) - 0.12;
-      // elbow drives harder on the forward swing -> relaxed, human
       const bend = 1.2 + 0.5 * (0.5 - 0.5 * Math.cos(ph));
       const elbow = seg(sh, a, T.uarm);
       const wrist = seg(elbow, a + bend, T.farm);
@@ -98,7 +91,6 @@
     const lR = leg(hipR, p), lL = leg(hipL, p + Math.PI);
     const aR = arm(shR, p + Math.PI), aL = arm(shL, p);
 
-    // bones: [a, b, width, curve]  (curve = organic bow, screen-space)
     const bones = [
       [pelvis, spineMid, 1.15, 0.05], [spineMid, chest, 1.05, -0.06], [chest, neck, 0.82, 0.04],
       [hipL, hipR, 0.85, 0.12],
@@ -111,8 +103,8 @@
     return { bones, head, headR: 0.16 };
   }
 
-  function project(pt, ry, rx) {
-    const cY = Math.cos(ry), sY = Math.sin(ry), cX = Math.cos(rx), sX = Math.sin(rx);
+  function project(pt) {
+    const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(rotX), sX = Math.sin(rotX);
     const x = pt[0], y = pt[1], z = pt[2];
     const x1 = x * cY + z * sY, z1 = -x * sY + z * cY;
     const y2 = y * cX - z1 * sX, z2 = y * sX + z1 * cX;
@@ -120,7 +112,16 @@
     return { x: cx + x1 * SCALE * persp, y: cy - y2 * SCALE * persp, z: z2, persp };
   }
 
-  const LW = 0.055; // stroke thickness in the offscreen buffer
+  const LW = 0.055;
+
+  function curveTo(pa, pb, curve) {
+    ctx.moveTo(pa.x, pa.y);
+    if (curve) {
+      const dx = pb.x - pa.x, dy = pb.y - pa.y, len = Math.hypot(dx, dy) || 1;
+      const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2, nx = -dy / len, ny = dx / len;
+      ctx.quadraticCurveTo(mx + nx * curve * len, my + ny * curve * len, pb.x, pb.y);
+    } else ctx.lineTo(pb.x, pb.y);
+  }
 
   function rasterize(fig) {
     ctx.fillStyle = "#000";
@@ -128,39 +129,64 @@
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    const items = [];
+    // project everything once
+    const B = [];
     for (const [a, b, w, curve] of fig.bones) {
-      const pa = project(a, rotY, rotX), pb = project(b, rotY, rotX);
-      items.push({ t: "b", pa, pb, w, curve: curve || 0, z: (pa.z + pb.z) / 2, pw: (pa.persp + pb.persp) / 2 });
+      const pa = project(a), pb = project(b);
+      B.push({ pa, pb, w, curve: curve || 0, z: (pa.z + pb.z) / 2, pw: (pa.persp + pb.persp) / 2 });
     }
-    const ph = project(fig.head, rotY, rotX);
+    const ph = project(fig.head);
+    let groundY = ph.y;
+    for (const it of B) groundY = Math.max(groundY, it.pa.y, it.pb.y);
+    groundY += 5;
+
+    // ---- human-shaped cast shadow (figure sheared + flattened onto the floor) ----
+    const LX = 0.42, SQ = 0.06;
+    const sp = (p) => { const t = groundY - p.y; return { x: p.x + t * LX, y: groundY + t * SQ }; };
+    ctx.globalAlpha = 1;
+    for (let pass = 0; pass < 2; pass++) {
+      const soft = pass === 0 ? 2.8 : 1.2;   // wide soft pass then tighter core
+      const g = pass === 0 ? 32 : 56;
+      ctx.strokeStyle = "rgb(" + g + "," + g + "," + g + ")";
+      ctx.fillStyle = ctx.strokeStyle;
+      for (const it of B) {
+        ctx.lineWidth = Math.max(1.5, it.w * LW * SCALE * it.pw + soft);
+        ctx.beginPath();
+        curveTo(sp(it.pa), sp(it.pb), it.curve);
+        ctx.stroke();
+      }
+      const sh = sp(ph);
+      ctx.beginPath();
+      ctx.ellipse(sh.x, sh.y, fig.headR * SCALE * ph.persp + soft, fig.headR * SCALE * ph.persp * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ---- figure with light shading (overhead-left) ----
+    const items = B.map((x) => ({ t: "b", ...x }));
     items.push({ t: "h", p: ph, z: ph.z + 0.05, r: fig.headR });
     items.sort((m, n) => m.z - n.z);
 
     for (const it of items) {
-      // brightness by depth: nearer -> brighter (encodes 3D into the ASCII density)
-      const g = Math.max(90, Math.min(255, Math.round(158 + it.z * 240)));
+      const py = it.t === "b" ? (it.pa.y + it.pb.y) / 2 : it.p.y;
+      const px = it.t === "b" ? (it.pa.x + it.pb.x) / 2 : it.p.x;
+      const light = (cy - py) / PH * 46 + (cx - px) / PW * 20;   // top & left a touch brighter
+      const g = Math.max(78, Math.min(255, Math.round(150 + it.z * 230 + light)));
       const col = "rgb(" + g + "," + g + "," + g + ")";
       if (it.t === "b") {
         ctx.strokeStyle = col;
         ctx.lineWidth = Math.max(1.2, it.w * LW * SCALE * it.pw);
         ctx.beginPath();
-        ctx.moveTo(it.pa.x, it.pa.y);
-        const dx = it.pb.x - it.pa.x, dy = it.pb.y - it.pa.y;
-        const len = Math.hypot(dx, dy) || 1;
-        if (it.curve) {
-          // organic bow: control point offset perpendicular to the bone
-          const mx = (it.pa.x + it.pb.x) / 2, my = (it.pa.y + it.pb.y) / 2;
-          const nx = -dy / len, ny = dx / len;
-          ctx.quadraticCurveTo(mx + nx * it.curve * len, my + ny * it.curve * len, it.pb.x, it.pb.y);
-        } else {
-          ctx.lineTo(it.pb.x, it.pb.y);
-        }
+        curveTo(it.pa, it.pb, it.curve);
         ctx.stroke();
       } else {
-        ctx.fillStyle = col;
+        // head with a soft radial shade for a rounder, textured look
+        const r = it.r * SCALE * it.p.persp;
+        const grd = ctx.createRadialGradient(it.p.x - r * 0.3, it.p.y - r * 0.3, r * 0.15, it.p.x, it.p.y, r);
+        grd.addColorStop(0, "rgb(255,255,255)");
+        grd.addColorStop(1, col);
+        ctx.fillStyle = grd;
         ctx.beginPath();
-        ctx.arc(it.p.x, it.p.y, it.r * SCALE * it.p.persp, 0, Math.PI * 2);
+        ctx.arc(it.p.x, it.p.y, r, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -177,7 +203,10 @@
           const base = ((cyi * SSY + y) * PW + cxi * SSX) * 4;
           for (let x = 0; x < SSX; x++) sum += data[base + x * 4];
         }
-        row += ch(sum / (SSX * SSY));
+        const avg = sum / (SSX * SSY);
+        if (avg < 4) { row += " "; continue; }
+        const off = (BAYER[cyi & 3][cxi & 3] / 16 - 0.5) * DITHER;   // halftone texture
+        row += ch(avg + off);
       }
       s += row;
       if (cyi < ROWS - 1) s += "\n";
@@ -188,16 +217,17 @@
   const start = performance.now();
   let acc = 0, last = start;
   function frame(now) {
-    // slow-motion cinematic run
-    const p = (now - start) * 0.0013;
+    const p = (now - start) * 0.0013;  // slow-motion run
 
     if (!dragging) {
-      rotY += velY; velY *= 0.95;
-      rotY += IDLE;
-      rotX += (REST_X - rotX) * 0.03;
+      tgtY += velY; velY *= DECAY;
+      tgtY += IDLE;
+      tgtX += (REST_X - tgtX) * 0.02;
     }
+    // fluid easing toward the steering target
+    rotY += (tgtY - rotY) * EASE;
+    rotX += (tgtX - rotX) * EASE;
 
-    // render ASCII at ~28fps for a filmic cadence
     acc += now - last; last = now;
     if (acc >= 34) {
       acc = 0;
