@@ -97,12 +97,13 @@
       return { knee, ankle, foot };
     }
     function arm(sh, ph) {
-      // shoulder swing (contralateral); hand travels hip -> chest
-      const a = 0.72 * Math.sin(ph) - 0.16;
-      // elbow ~90°, tightening as the arm drives forward/up, opening on the back swing
-      const bend = 1.5 + 0.4 * Math.sin(ph) + 0.08;
+      // upper arm stays fairly low; the forearm does most of the pumping
+      const a = 0.5 * Math.sin(ph) - 0.18;
+      // elbow tightens as the hand drives up/forward (toward chin), opens on the back swing
+      const bend = 1.4 + 0.5 * Math.sin(ph);
       const elbow = seg(sh, a, T.uarm);
-      const wrist = seg(elbow, a + bend, T.farm);
+      // slight forearm lag for a looser, more human swing
+      const wrist = seg(elbow, a + bend + 0.12 * Math.sin(ph - 0.6), T.farm);
       return { elbow, wrist };
     }
     const lR = leg(hipR, p), lL = leg(hipL, p + Math.PI);
@@ -111,7 +112,7 @@
     const bones = [
       [pelvis, spineMid, 1.15, 0.05], [spineMid, chest, 1.05, -0.06], [chest, neck, 0.82, 0.04],
       [hipL, hipR, 0.85, 0.12],
-      [chest, shL, 0.68, 0.08], [chest, shR, 0.68, -0.08],
+      [shL, shR, 0.7, 0.05],
       [shL, aL.elbow, 0.72, 0.1], [aL.elbow, aL.wrist, 0.58, 0.14],
       [shR, aR.elbow, 0.72, -0.1], [aR.elbow, aR.wrist, 0.58, -0.14],
       [hipL, lL.knee, 1.0, 0.09], [lL.knee, lL.ankle, 0.84, -0.1], [lL.ankle, lL.foot, 0.64, 0.06],
