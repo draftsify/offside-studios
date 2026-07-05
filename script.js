@@ -50,43 +50,65 @@
 
   // ---- skeleton (local, +Y up, faces +X, lateral = Z) ----
   const T = { thigh: 0.46, calf: 0.44, foot: 0.17, uarm: 0.34, farm: 0.32, hipZ: 0.13, shZ: 0.18 };
+  // "down" vector rotated about lateral(Z) axis: +a swings forward(+X)
   const seg = (b, a, l) => [b[0] + Math.sin(a) * l, b[1] - Math.cos(a) * l, b[2]];
+  // rotate a point about a vertical (Y) axis passing through (ax,·,az)
+  function twistY(pt, a, ax, az) {
+    const dx = pt[0] - ax, dz = pt[2] - az, c = Math.cos(a), s = Math.sin(a);
+    return [ax + dx * c + dz * s, pt[1], az - dx * s + dz * c];
+  }
 
   function pose(p) {
-    const bob = 0.045 * Math.cos(2 * p);
-    const lean = 0.07;
+    const bob = 0.05 * Math.cos(2 * p);
+    const leanX = 0.06 + 0.025 * Math.sin(2 * p);   // torso lean breathes
+    const twist = 0.22 * Math.sin(p);               // shoulders/hips counter-rotate
+    const sway = 0.03 * Math.sin(p);                // gentle hip sway
+
     const pelvis = [0, bob, 0];
-    const chest = [lean, 0.6 + bob, 0];
-    const neck = [lean * 1.15, 0.76 + bob, 0];
-    const head = [lean * 1.25, 0.95 + bob, 0];
-    const shR = [lean, 0.72 + bob, T.shZ], shL = [lean, 0.72 + bob, -T.shZ];
-    const hipR = [0, 0.02 + bob, T.hipZ], hipL = [0, 0.02 + bob, -T.hipZ];
-    const LA = 0.9, AA = 0.72;
+    const spineMid = [leanX * 0.45, 0.32 + bob, 0];
+    const chest = [leanX, 0.62 + bob, 0];
+    const neck = [leanX * 1.12, 0.77 + bob + 0.01 * Math.cos(2 * p), 0];
+    // head follows the motion (slight nod + lead)
+    const head = [leanX * 1.25 + 0.03, 0.95 + bob, 0.02 * Math.sin(p)];
+
+    // shoulders twist one way, hips the other -> natural torso rotation
+    const shR = twistY([leanX, 0.72 + bob, T.shZ], twist, leanX, 0);
+    const shL = twistY([leanX, 0.72 + bob, -T.shZ], twist, leanX, 0);
+    const hipR = twistY([0, 0.02 + bob, T.hipZ + sway], -twist, 0, 0);
+    const hipL = twistY([0, 0.02 + bob, -T.hipZ + sway], -twist, 0, 0);
+
+    const LA = 0.92, AA = 0.8;
     function leg(hip, ph) {
       const th = LA * Math.sin(ph);
-      const flex = 0.45 + 0.85 * (0.5 - 0.5 * Math.cos(ph + 0.6));
+      // knee flex with a little lag (secondary motion)
+      const flex = 0.4 + 0.95 * (0.5 - 0.5 * Math.cos(ph + 0.75));
       const knee = seg(hip, th, T.thigh);
       const ankle = seg(knee, th - flex, T.calf);
-      const foot = seg(ankle, 1.35 + 0.25 * Math.sin(ph), T.foot);
+      const foot = seg(ankle, th - flex + 1.5 + 0.2 * Math.sin(ph), T.foot);
       return { knee, ankle, foot };
     }
     function arm(sh, ph) {
-      const a = AA * Math.sin(ph) - 0.1;
+      const a = AA * Math.sin(ph) - 0.12;
+      // elbow drives harder on the forward swing -> relaxed, human
+      const bend = 1.2 + 0.5 * (0.5 - 0.5 * Math.cos(ph));
       const elbow = seg(sh, a, T.uarm);
-      const wrist = seg(elbow, a + 1.45, T.farm);
+      const wrist = seg(elbow, a + bend, T.farm);
       return { elbow, wrist };
     }
     const lR = leg(hipR, p), lL = leg(hipL, p + Math.PI);
     const aR = arm(shR, p + Math.PI), aL = arm(shL, p);
+
+    // bones: [a, b, width, curve]  (curve = organic bow, screen-space)
     const bones = [
-      [pelvis, chest, 1.15], [chest, neck, 0.85], [hipL, hipR, 0.9],
-      [chest, shL, 0.7], [chest, shR, 0.7],
-      [shL, aL.elbow, 0.72], [aL.elbow, aL.wrist, 0.6],
-      [shR, aR.elbow, 0.72], [aR.elbow, aR.wrist, 0.6],
-      [hipL, lL.knee, 0.98], [lL.knee, lL.ankle, 0.86], [lL.ankle, lL.foot, 0.66],
-      [hipR, lR.knee, 0.98], [lR.knee, lR.ankle, 0.86], [lR.ankle, lR.foot, 0.66],
+      [pelvis, spineMid, 1.15, 0.05], [spineMid, chest, 1.05, -0.06], [chest, neck, 0.82, 0.04],
+      [hipL, hipR, 0.85, 0.12],
+      [chest, shL, 0.68, 0.08], [chest, shR, 0.68, -0.08],
+      [shL, aL.elbow, 0.72, 0.1], [aL.elbow, aL.wrist, 0.58, 0.14],
+      [shR, aR.elbow, 0.72, -0.1], [aR.elbow, aR.wrist, 0.58, -0.14],
+      [hipL, lL.knee, 1.0, 0.09], [lL.knee, lL.ankle, 0.84, -0.1], [lL.ankle, lL.foot, 0.64, 0.06],
+      [hipR, lR.knee, 1.0, -0.09], [lR.knee, lR.ankle, 0.84, 0.1], [lR.ankle, lR.foot, 0.64, -0.06],
     ];
-    return { bones, head, headR: 0.17 };
+    return { bones, head, headR: 0.16 };
   }
 
   function project(pt, ry, rx) {
@@ -107,9 +129,9 @@
     ctx.lineJoin = "round";
 
     const items = [];
-    for (const [a, b, w] of fig.bones) {
+    for (const [a, b, w, curve] of fig.bones) {
       const pa = project(a, rotY, rotX), pb = project(b, rotY, rotX);
-      items.push({ t: "b", pa, pb, w, z: (pa.z + pb.z) / 2, pw: (pa.persp + pb.persp) / 2 });
+      items.push({ t: "b", pa, pb, w, curve: curve || 0, z: (pa.z + pb.z) / 2, pw: (pa.persp + pb.persp) / 2 });
     }
     const ph = project(fig.head, rotY, rotX);
     items.push({ t: "h", p: ph, z: ph.z + 0.05, r: fig.headR });
@@ -124,7 +146,16 @@
         ctx.lineWidth = Math.max(1.2, it.w * LW * SCALE * it.pw);
         ctx.beginPath();
         ctx.moveTo(it.pa.x, it.pa.y);
-        ctx.lineTo(it.pb.x, it.pb.y);
+        const dx = it.pb.x - it.pa.x, dy = it.pb.y - it.pa.y;
+        const len = Math.hypot(dx, dy) || 1;
+        if (it.curve) {
+          // organic bow: control point offset perpendicular to the bone
+          const mx = (it.pa.x + it.pb.x) / 2, my = (it.pa.y + it.pb.y) / 2;
+          const nx = -dy / len, ny = dx / len;
+          ctx.quadraticCurveTo(mx + nx * it.curve * len, my + ny * it.curve * len, it.pb.x, it.pb.y);
+        } else {
+          ctx.lineTo(it.pb.x, it.pb.y);
+        }
         ctx.stroke();
       } else {
         ctx.fillStyle = col;
