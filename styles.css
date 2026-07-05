@@ -156,7 +156,8 @@ section[data-border] { border-radius: var(--radius); background: var(--bg); }
   position: relative;
   border-radius: 12px;
   background: #0d0d0d;
-  min-height: 360px;
+  min-height: 440px;
+  padding: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -164,9 +165,10 @@ section[data-border] { border-radius: var(--radius); background: var(--bg); }
 }
 .ascii-runner {
   font-family: var(--mono);
-  color: #eaeaea;
-  font-size: clamp(10px, 1.6vw, 18px);
-  line-height: 1.15;
+  color: #ededed;
+  font-size: clamp(6px, 1.15vw, 11px);
+  line-height: 1.1;
+  letter-spacing: 0.5px;
   white-space: pre;
   text-align: center;
   user-select: none;
