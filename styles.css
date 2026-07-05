@@ -151,47 +151,34 @@ section[data-border] { border-radius: var(--radius); background: var(--bg); }
 }
 .btn-block { width: 100%; text-align: center; border: none; }
 
-/* ---------- ASCII STAGE ---------- */
-.ascii-stage {
+/* ---------- 3D RUNNER ---------- */
+.runner3d {
   position: relative;
-  border-radius: 12px;
-  background: #0d0d0d;
-  min-height: 440px;
-  padding: 24px;
+  width: 100%;
+  min-height: 480px;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-}
-.ascii-runner {
-  font-family: var(--mono);
-  color: #ededed;
-  font-size: clamp(6px, 1.15vw, 11px);
-  line-height: 1.1;
-  letter-spacing: 0.5px;
-  white-space: pre;
-  text-align: center;
+  touch-action: none;
+  cursor: grab;
   user-select: none;
-  margin: 0;
 }
-.ascii-caption {
+.runner3d.dragging { cursor: grabbing; }
+#runner-canvas { width: 100%; height: 480px; display: block; }
+.runner-hint {
   position: absolute;
-  bottom: 14px;
-  left: 16px;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
   font-family: var(--mono);
-  font-size: 11px;
-  color: #6a6a6a;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+  transition: opacity 0.3s;
 }
-.ascii-corner {
-  position: absolute;
-  width: 18px; height: 18px;
-  border-color: rgba(255,255,255,0.35);
-  border-style: solid;
-}
-.ascii-corner.tl { top: 12px; left: 12px; border-width: 1px 0 0 1px; }
-.ascii-corner.tr { top: 12px; right: 12px; border-width: 1px 1px 0 0; }
-.ascii-corner.bl { bottom: 12px; left: 12px; border-width: 0 0 1px 1px; }
-.ascii-corner.br { bottom: 12px; right: 12px; border-width: 0 1px 1px 0; }
+.runner3d.dragging .runner-hint { opacity: 0; }
 
 /* ---------- MARQUEE ---------- */
 .marquee-wrap { padding: 26px 0; text-align: center; overflow: hidden; }

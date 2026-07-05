@@ -42,14 +42,10 @@
         </div>
       </div>
 
-      <!-- ASCII RUNNER -->
-      <div class="ascii-stage" data-border>
-        <div class="ascii-corner tl"></div>
-        <div class="ascii-corner tr"></div>
-        <div class="ascii-corner bl"></div>
-        <div class="ascii-corner br"></div>
-        <pre id="runner" class="ascii-runner" aria-label="Animated ASCII stickman running"></pre>
-        <div class="ascii-caption">// running the build_</div>
+      <!-- 3D DRAGGABLE RUNNING STICKMAN -->
+      <div class="runner3d" id="runner3d">
+        <canvas id="runner-canvas" aria-label="3D running stickman — drag to rotate"></canvas>
+        <span class="runner-hint">drag to rotate ⟳</span>
       </div>
     </section>
 
@@ -179,7 +175,6 @@
     </div>
   </footer>
 
-  <script src="runner-frames.js"></script>
   <script src="script.js"></script>
 </body>
 </html>
